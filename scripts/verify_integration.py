@@ -41,7 +41,9 @@ def main() -> int:
         ("Live model size", "ตอนนี้ qwen3:8b มีขนาดเท่าไหร่?", "live", None),
         ("Memory recall", "ก่อนหน้านี้เราเคยคุยเรื่องอะไรเกี่ยวกับ qwen3:8b บ้าง?", "memory", "memory_search"),
         ("Explicit memory save", "จำไว้ว่าชื่อโปรเจกต์ของฉันคือ CYRAX", "memory_save", "memory_save"),
-        ("File read", r"อ่านไฟล์ F:\AI\CYRAX\TEST_TOOL.txt", "action", "read_file"),
+        # File reads are live machine state, so the router intentionally classifies
+        # them as live while still selecting the narrow read_file tool.
+        ("File read", r"อ่านไฟล์ F:\AI\CYRAX\TEST_TOOL.txt", "live", "read_file"),
         ("File write", r"สร้างไฟล์ F:\AI\CYRAX\INTEGRATION_TEST.txt", "action", "write_file"),
     ]
     for label, text, kind, tool in cases:
