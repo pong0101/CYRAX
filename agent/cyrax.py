@@ -10,6 +10,7 @@ import ollama
 from interpreter import interpreter
 
 from memory import MemoryManager
+from memory_policy import MemoryPolicy
 from tool_bridge import ToolBridge
 
 
@@ -21,10 +22,8 @@ class CYRAX:
         ).expanduser().resolve()
         self.memory = MemoryManager(str(self.vault_path))
         self.tools = ToolBridge(self.memory)
+        self.memory_policy = MemoryPolicy()
 
-        # Open Interpreter remains installed/configured as CYRAX's computer
-        # execution layer. OI 0.4.3 can mis-handle Ollama tool calls with some
-        # LiteLLM versions, so native Ollama tool calling is the reliable router.
         interpreter.llm.model = f"ollama_chat/{model}"
         interpreter.llm.api_base = os.getenv(
             "CYRAX_OLLAMA_API_BASE", "http://127.0.0.1:11434"
@@ -104,6 +103,32 @@ class CYRAX:
         arguments = getattr(fn, "arguments", {}) or {}
         return name, arguments if isinstance(arguments, dict) else {}
 
+    def _auto_memory(self, user_message: str) -> str | None:
+        """Persist only explicit or high-confidence facts; never store normal chat."""
+        decision = self.memory_policy.classify(user_message)
+        if not decision.should_save:
+            return None
+
+        folder = "01_Memory"
+        if decision.category == "project":
+            folder = "02_Projects"
+        elif decision.category == "preference":
+            folder = "01_Memory"
+
+        title = decision.title
+        content = (
+            f"Original user statement:\n\n{user_message}\n\n"
+            f"Classification: {decision.category}\n"
+            f"Reason: {decision.reason}"
+        )
+        path = self.memory.remember(
+            title=title,
+            content=content,
+            folder=folder,
+            memory_type=decision.category,
+        )
+        return f"Auto-memory saved: {path}"
+
     def run(self, user_message: str) -> str:
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": self.system_prompt(user_message)},
@@ -118,6 +143,9 @@ class CYRAX:
 
             if not tool_calls:
                 answer = str(message.get("content", "")).strip()
+                memory_result = self._auto_memory(user_message)
+                if memory_result:
+                    print(f"\nCYRAX memory: {memory_result}")
                 self.history.extend(
                     [
                         {"role": "user", "content": user_message},
@@ -155,6 +183,7 @@ if __name__ == "__main__":
     print(f"Obsidian memory: {cyrax.vault_path}")
     print("Open Interpreter: installed / computer layer available")
     print("Native Ollama tools: enabled (approval required for writes/PowerShell)")
+    print("Second Brain: auto-recall + conservative auto-memory enabled")
     print("Type 'exit' to quit.")
 
     while True:
