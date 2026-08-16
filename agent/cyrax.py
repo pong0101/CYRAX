@@ -129,12 +129,17 @@ class CYRAX:
     def _normalize_tool_units(answer: str, messages: list[dict[str, Any]]) -> str:
         """Prevent LLM unit hallucinations when a live tool supplied an exact unit.
 
-        This is intentionally narrow: only a number explicitly returned as `bytes`
-        by a tool is corrected if the final answer incorrectly labels that same
-        number as bits/บิต. Other units are never guessed or rewritten.
+        Only exact byte values returned by a tool are normalized. This handles
+        both forms produced by the model:
+          * "5,225,388,164 บิต"
+          * "5,225,388,164 bytes บิต"
+        The second form is the important case: the model has already emitted the
+        correct unit and then appended an incorrect duplicate unit. In that case
+        the duplicate is removed rather than replacing the valid `bytes` label.
         """
         if not answer:
             return answer
+
         tool_text = "\n".join(
             str(message.get("content", ""))
             for message in messages
@@ -143,9 +148,31 @@ class CYRAX:
         if not tool_text or "bytes" not in tool_text.lower():
             return answer
 
-        byte_numbers = set(re.findall(r"(?<!\d)(\d{1,3}(?:,\d{3})+|\d+)(?=\s+bytes\b)", tool_text, flags=re.IGNORECASE))
+        byte_numbers = set(
+            re.findall(
+                r"(?<!\d)(\d{1,3}(?:,\d{3})+|\d+)(?=\s+bytes\b)",
+                tool_text,
+                flags=re.IGNORECASE,
+            )
+        )
+
         for number in byte_numbers:
-            answer = re.sub(rf"(?<!\d){re.escape(number)}(?=\s*(?:บิต|bits?)\b)", f"{number} bytes", answer, flags=re.IGNORECASE)
+            # Correct an already-correct bytes label followed by a hallucinated
+            # bits/บิต label: "N bytes บิต" -> "N bytes".
+            answer = re.sub(
+                rf"(?<!\d){re.escape(number)}\s+bytes\s+(?:บิต|bits?)\b",
+                f"{number} bytes",
+                answer,
+                flags=re.IGNORECASE,
+            )
+            # Correct a number directly mislabeled as bits: "N บิต" -> "N bytes".
+            answer = re.sub(
+                rf"(?<!\d){re.escape(number)}(?=\s*(?:บิต|bits?)\b)",
+                f"{number} bytes",
+                answer,
+                flags=re.IGNORECASE,
+            )
+
         return answer
 
     def _auto_memory(self, user_message: str) -> str | None:
