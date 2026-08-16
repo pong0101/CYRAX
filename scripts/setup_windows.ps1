@@ -16,6 +16,9 @@ if (-not (Test-Path $venv)) {
 
 & $python -m pip install --upgrade pip
 
+# Open Interpreter 0.4.3 still imports pkg_resources, so keep setuptools < 81.
+& $python -m pip install 'setuptools<81'
+
 # Open Interpreter 0.4.3 declares tiktoken<0.8, while modern LiteLLM
 # requires tiktoken>=0.8. Installing them in one pip resolution is
 # impossible, so install the runtime pieces in a controlled order.
@@ -43,7 +46,6 @@ if (-not (Test-Path $venv)) {
   'rich==13.9.4' `
   'selenium==4.47.0' `
   'send2trash==1.8.3' `
-  'setuptools==84.0.0' `
   'shortuuid==1.0.13' `
   'six==1.17.0' `
   'starlette==0.37.2' `
@@ -54,8 +56,16 @@ if (-not (Test-Path $venv)) {
   'wget==3.2' `
   'yaspin==3.4.0'
 
+# setup_windows.ps1 is intentionally strict: reaching this point means every
+# command above completed successfully.
+& $python -c "import interpreter, ollama, tiktoken; print('CYRAX runtime imports: OK'); print('tiktoken:', tiktoken.__version__)"
+
+# Create the default Obsidian second-brain vault outside the Git repository.
+& $PSScriptRoot\setup_obsidian.ps1
+
 Write-Host ''
 Write-Host 'CYRAX environment is ready.' -ForegroundColor Green
+Write-Host 'Obsidian second brain is ready.' -ForegroundColor Green
 Write-Host 'Next: make sure Ollama is running and qwen3:8b is available.'
 Write-Host 'Then run:'
 Write-Host "  & '$python' '$root\agent\cyrax.py'"
