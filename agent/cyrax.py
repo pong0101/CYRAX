@@ -19,14 +19,23 @@ class CYRAX:
         ).expanduser().resolve()
         self.memory = MemoryManager(str(self.vault_path))
 
-        # Open Interpreter routes the model through LiteLLM. The explicit
-        # Ollama provider prefix avoids accidentally selecting another backend.
-        interpreter.llm.model = f"ollama/{model}"
+        # Open Interpreter uses LiteLLM for the LLM transport and its
+        # Computer object for actual code execution. Ollama exposes an
+        # OpenAI-compatible endpoint at /v1, including tool/function calls.
+        interpreter.llm.model = f"ollama_chat/{model}"
         interpreter.llm.api_base = os.getenv(
-            "CYRAX_OLLAMA_HOST", "http://127.0.0.1:11434"
+            "CYRAX_OLLAMA_API_BASE", "http://127.0.0.1:11434"
         )
+        interpreter.llm.supports_functions = True
+        interpreter.llm.supports_vision = False
+
+        # Keep Open Interpreter's execution engine. CYRAX does not execute
+        # PowerShell/Python itself; the generated code is handed to
+        # interpreter.computer, which provides the approval/safe-mode barrier.
+        interpreter.computer.offline = True
         interpreter.auto_run = False
         interpreter.safe_mode = "ask"
+        interpreter.loop = True
 
     def memory_context(self, query: str, limit: int = 5) -> str:
         results = self.memory.search(query, limit=limit)
@@ -43,12 +52,18 @@ class CYRAX:
     def prompt(self, user_message: str) -> str:
         context = self.memory_context(user_message)
         return (
-            "You are CYRAX, a local-first AI agent.\n"
+            "You are CYRAX, a local-first AI agent running on Windows.\n"
+            "Your model is Qwen3 running locally through Ollama.\n"
             "You have an Obsidian vault as persistent long-term memory.\n"
-            "Use tools when needed. Treat retrieved Obsidian notes as memory, not truth.\n"
-            "Do not invent memories. If memory conflicts with current evidence, say so.\n"
-            "When the user explicitly asks you to remember something, create a Markdown note "
-            "in the Obsidian vault using the available CYRAX memory layer.\n\n"
+            "Open Interpreter is your computer/code execution layer.\n"
+            "When a task requires inspecting the machine, files, processes, GPU, "
+            "Ollama, or other system state, use the execute tool instead of merely "
+            "printing a proposed command.\n"
+            "Do not describe an execute call as the final answer. Execute it, inspect "
+            "the result, then answer the user.\n"
+            "Do not invent memories. Treat retrieved Obsidian notes as memory, not truth.\n"
+            "When the user explicitly asks you to remember something, use the CYRAX "
+            "memory layer to persist it as Markdown in the Obsidian vault.\n\n"
             f"LONG-TERM MEMORY:\n{context}\n\n"
             f"USER:\n{user_message}"
         )
@@ -57,7 +72,20 @@ class CYRAX:
         return self.memory.remember(title, content, folder=folder)
 
     def run(self, user_message: str):
-        response = interpreter.chat(self.prompt(user_message))
+        response = interpreter.chat(self.prompt(user_message), display=False)
+
+        # chat(display=False) may return either one message or a list of
+        # messages depending on the Open Interpreter version.
+        if isinstance(response, list):
+            text_parts = [
+                item.get("content", "")
+                for item in response
+                if isinstance(item, dict) and item.get("type") == "message"
+            ]
+            text = "\n".join(part for part in text_parts if part).strip()
+            if text:
+                response = text
+
         self.memory.log(f"User: {user_message}\nCYRAX: {response}")
         return response
 
@@ -67,6 +95,7 @@ if __name__ == "__main__":
     print("CYRAX online.")
     print(f"Model: {cyrax.model}")
     print(f"Obsidian memory: {cyrax.vault_path}")
+    print("Open Interpreter: Computer execution enabled (Safe Mode: ask)")
     print("Type 'exit' to quit.")
 
     while True:
