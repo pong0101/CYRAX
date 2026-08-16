@@ -10,7 +10,7 @@ import ollama
 from interpreter import interpreter
 
 from memory import MemoryManager
-from agent.tool_bridge import ToolBridge
+from tool_bridge import ToolBridge
 
 
 class CYRAX:
@@ -22,11 +22,9 @@ class CYRAX:
         self.memory = MemoryManager(str(self.vault_path))
         self.tools = ToolBridge(self.memory)
 
-        # Keep Open Interpreter available as CYRAX's computer/code execution
-        # layer. OI 0.4.3 + current LiteLLM can mis-handle Ollama tool calls,
-        # so the reliable Ollama native tool-call loop below is the primary
-        # router. This prevents raw {"name":"execute"...} from being shown
-        # to the user without execution.
+        # Open Interpreter remains installed/configured as CYRAX's computer
+        # execution layer. OI 0.4.3 can mis-handle Ollama tool calls with some
+        # LiteLLM versions, so native Ollama tool calling is the reliable router.
         interpreter.llm.model = f"ollama_chat/{model}"
         interpreter.llm.api_base = os.getenv(
             "CYRAX_OLLAMA_API_BASE", "http://127.0.0.1:11434"
@@ -113,8 +111,6 @@ class CYRAX:
             {"role": "user", "content": user_message},
         ]
 
-        # Allow several tool calls in one request, then ask Qwen3 to produce
-        # the final natural-language answer from the real tool results.
         for _ in range(8):
             response = self._chat_once(messages)
             message = self._message_dict(response)
@@ -131,24 +127,20 @@ class CYRAX:
                 self.memory.log(f"User: {user_message}\nCYRAX: {answer}")
                 return answer
 
-            assistant_message: dict[str, Any] = {
-                "role": "assistant",
-                "content": message.get("content", ""),
-                "tool_calls": tool_calls,
-            }
-            messages.append(assistant_message)
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": message.get("content", ""),
+                    "tool_calls": tool_calls,
+                }
+            )
 
             for call in tool_calls:
                 name, arguments = self._call_parts(call)
                 print(f"\nCYRAX tool: {name}")
                 result = self.tools.call(name, arguments)
                 print(result)
-                messages.append(
-                    {
-                        "role": "tool",
-                        "content": result,
-                    }
-                )
+                messages.append({"role": "tool", "content": result})
 
         return "I stopped after too many tool calls. Please try the request again."
 
