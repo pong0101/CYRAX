@@ -53,28 +53,14 @@ class CYRAX:
 
     @staticmethod
     def _is_runtime_model_question(user_message: str) -> bool:
-        """Return True for questions about CYRAX's configured main model.
-
-        These are deterministic runtime facts and must not trigger an Ollama
-        inventory lookup. A request explicitly asking what is installed in
-        Ollama remains a live tool request.
-        """
+        """Return True for questions about CYRAX's configured main model."""
         text = user_message.strip().lower()
         if "ollama" in text and any(term in text for term in ("ติดตั้ง", "มีโมเดล", "models", "installed")):
             return False
         patterns = (
-            "cyrax ใช้โมเดลอะไร",
-            "cyrax ใช้โมเดลไหน",
-            "cyrax ใช้ llm อะไร",
-            "cyrax ใช้ llm ไหน",
-            "โมเดลหลักของ cyrax",
-            "โมเดลหลักคืออะไร",
-            "ใช้โมเดลหลักอะไร",
-            "ระบบสมองของโปรเจกต์นี้",
-            "ระบบสมองของโปรเจคนี้",
-            "main model",
-            "main llm",
-            "active model",
+            "cyrax ใช้โมเดลอะไร", "cyrax ใช้โมเดลไหน", "cyrax ใช้ llm อะไร", "cyrax ใช้ llm ไหน",
+            "โมเดลหลักของ cyrax", "โมเดลหลักคืออะไร", "ใช้โมเดลหลักอะไร", "ระบบสมองของโปรเจกต์นี้",
+            "ระบบสมองของโปรเจคนี้", "main model", "main llm", "active model",
         )
         return any(pattern in text for pattern in patterns)
 
@@ -107,6 +93,12 @@ class CYRAX:
             "3. Obsidian long-term memory is context, not unquestionable truth.\n"
             "4. Old logs are historical evidence only.\n"
             "5. If live evidence conflicts with memory, trust live evidence and say that memory was stale.\n\n"
+            "TOOL RESULT INTEGRITY:\n"
+            "1. A successful native tool result is authoritative evidence.\n"
+            "2. Never claim a file is empty, missing, or unread when read_file returned actual content.\n"
+            "3. Never contradict exact content returned by read_file.\n"
+            "4. Never replace a successful tool result with a guess from memory.\n"
+            "5. For read-only file requests, report the returned file content faithfully.\n\n"
             "UNIT ACCURACY:\n"
             "1. Tool output that says bytes means BYTES. Never call bytes bits.\n"
             "2. If a tool returns N bytes, report N bytes and, when useful, convert to GiB as N / 1073741824.\n"
@@ -169,37 +161,13 @@ class CYRAX:
         """Prevent LLM unit hallucinations when a live tool supplied an exact unit."""
         if not answer:
             return answer
-
-        tool_text = "\n".join(
-            str(message.get("content", ""))
-            for message in messages
-            if message.get("role") == "tool"
-        )
+        tool_text = "\n".join(str(message.get("content", "")) for message in messages if message.get("role") == "tool")
         if not tool_text or "bytes" not in tool_text.lower():
             return answer
-
-        byte_numbers = set(
-            re.findall(
-                r"(?<!\d)(\d{1,3}(?:,\d{3})+|\d+)(?=\s+bytes\b)",
-                tool_text,
-                flags=re.IGNORECASE,
-            )
-        )
-
+        byte_numbers = set(re.findall(r"(?<!\d)(\d{1,3}(?:,\d{3})+|\d+)(?=\s+bytes\b)", tool_text, flags=re.IGNORECASE))
         for number in byte_numbers:
-            answer = re.sub(
-                rf"(?<!\d){re.escape(number)}\s+bytes\s+(?:บิต|bits?)\b",
-                f"{number} bytes",
-                answer,
-                flags=re.IGNORECASE,
-            )
-            answer = re.sub(
-                rf"(?<!\d){re.escape(number)}(?=\s*(?:บิต|bits?)\b)",
-                f"{number} bytes",
-                answer,
-                flags=re.IGNORECASE,
-            )
-
+            answer = re.sub(rf"(?<!\d){re.escape(number)}\s+bytes\s+(?:บิต|bits?)\b", f"{number} bytes", answer, flags=re.IGNORECASE)
+            answer = re.sub(rf"(?<!\d){re.escape(number)}(?=\s*(?:บิต|bits?)\b)", f"{number} bytes", answer, flags=re.IGNORECASE)
         return answer
 
     def _auto_memory(self, user_message: str) -> str | None:
@@ -247,6 +215,15 @@ class CYRAX:
                 print(result)
                 self.last_source = "live_tool" if name in {"ollama_models", "read_file", "list_directory"} else "action"
                 messages.append({"role": "tool", "content": result})
+                # Native read_file is already the authoritative answer. Do not
+                # ask the LLM to reinterpret it and accidentally claim the file
+                # is empty or missing. This also keeps read-only requests out of
+                # the model's hallucination path.
+                if name == "read_file" and not result.startswith("Error:"):
+                    answer = result
+                    self.history.extend([{"role": "user", "content": user_message}, {"role": "assistant", "content": answer}])
+                    self.memory.log(f"User: {user_message}\nCYRAX: {answer}")
+                    return answer
         return "I stopped after too many tool calls. Please try the request again."
 
     def remember(self, title: str, content: str, folder: str = "01_Memory") -> Path:
