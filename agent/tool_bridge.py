@@ -32,7 +32,6 @@ class ToolBridge:
             return "Error: PowerShell code is empty."
         if not self._approval(f"Execute PowerShell:\n{code}"):
             return "Execution denied by user."
-
         try:
             result = subprocess.run(
                 ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", code],
@@ -45,7 +44,6 @@ class ToolBridge:
             return "Error: PowerShell execution timed out after 120 seconds."
         except OSError as exc:
             return f"Error starting PowerShell: {exc}"
-
         output = (result.stdout or "").strip()
         errors = (result.stderr or "").strip()
         if result.returncode != 0:
@@ -65,7 +63,7 @@ class ToolBridge:
     def write_file(self, path: str, content: str) -> str:
         """Write a text file after explicit user approval."""
         target = Path(path).expanduser().resolve()
-        if not self._approval(f"Write file {target}" ):
+        if not self._approval(f"Write file {target}"):
             return "File write denied by user."
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -83,7 +81,7 @@ class ToolBridge:
             return f"Error listing {target}: {exc}"
 
     def ollama_models(self) -> str:
-        """Return the installed Ollama model list from the live local server."""
+        """Return installed Ollama models with sizes explicitly labeled as bytes and GiB."""
         import ollama
 
         try:
@@ -97,8 +95,8 @@ class ToolBridge:
                 else:
                     name = getattr(model, "model", getattr(model, "name", "unknown"))
                     size = getattr(model, "size", 0)
-                size_gb = float(size) / (1024 ** 3) if size else 0
-                lines.append(f"{name} — {size:,} bytes ({size_gb:.2f} GiB)")
+                size_gib = float(size) / (1024 ** 3) if size else 0
+                lines.append(f"{name} — {size:,} bytes ({size_gib:.2f} GiB)")
             return "\n".join(lines) if lines else "No Ollama models are installed."
         except Exception as exc:
             return f"Error querying Ollama: {exc}"
@@ -122,7 +120,7 @@ class ToolBridge:
             {"type": "function", "function": {"name": "read_file", "description": "Read a UTF-8 text file from the local machine.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
             {"type": "function", "function": {"name": "write_file", "description": "Write a UTF-8 text file to the local machine. Requires user approval.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}}},
             {"type": "function", "function": {"name": "list_directory", "description": "List a local directory.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}}}},
-            {"type": "function", "function": {"name": "ollama_models", "description": "Query the live local Ollama server for installed models and their sizes.", "parameters": {"type": "object", "properties": {}}}},
+            {"type": "function", "function": {"name": "ollama_models", "description": "Query the live local Ollama server for installed models and their sizes. Tool output uses bytes and GiB; bytes are never bits.", "parameters": {"type": "object", "properties": {}}}},
             {"type": "function", "function": {"name": "memory_save", "description": "Persist a user-approved long-term memory as Markdown in the Obsidian vault.", "parameters": {"type": "object", "properties": {"title": {"type": "string"}, "content": {"type": "string"}, "folder": {"type": "string", "default": "01_Memory"}}, "required": ["title", "content"]}}},
             {"type": "function", "function": {"name": "memory_search", "description": "Search CYRAX's persistent Obsidian memory.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "default": 5}}, "required": ["query"]}}},
         ]
