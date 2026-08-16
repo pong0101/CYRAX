@@ -21,7 +21,7 @@ cases = [
     ("qwen3:8b คืออะไร?", "general", None),
     ("qwen3:8b ใช้ทำอะไร?", "general", None),
     ("qwen3:8b มีความสามารถอะไร?", "general", None),
-    ("ตอนนี้ qwen3:8b ถูกติดตั้งอยู่ไหม?", "live", None),
+    ("ตอนนี้ qwen3:8b ถูกติดตั้งอยู่ไหม?", "live", "ollama_models"),
 ]
 
 failed = 0
