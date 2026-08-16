@@ -35,11 +35,8 @@ class CYRAX:
         results, mode = self.memory.semantic_search(query, limit=limit)
         if not results:
             return f"No relevant long-term memory was found. Retrieval mode: {mode}."
-        return (
-            f"Retrieval mode: {mode}\n\n"
-            + "\n\n".join(
-                f"--- {item['path']} (score={item['score']}) ---\n{item['content']}" for item in results
-            )
+        return f"Retrieval mode: {mode}\n\n" + "\n\n".join(
+            f"--- {item['path']} (score={item['score']}) ---\n{item['content']}" for item in results
         )
 
     @staticmethod
@@ -57,8 +54,7 @@ class CYRAX:
         live_hint = (
             "THIS IS A LIVE-STATE REQUEST. Do not answer from memory alone. Use the appropriate native tool first, then answer from its result."
             if self._looks_live(user_message)
-            else
-            "This is not obviously a live-state request. Use relevant long-term memory when helpful."
+            else "This is not obviously a live-state request. Use relevant long-term memory when helpful."
         )
         return (
             "You are CYRAX, a local-first AI agent running on Windows.\n"
@@ -71,12 +67,21 @@ class CYRAX:
             "3. Obsidian long-term memory is context, not unquestionable truth.\n"
             "4. Old logs are historical evidence only.\n"
             "5. If live evidence conflicts with memory, trust live evidence and say that memory was stale.\n\n"
+            "UNIT ACCURACY:\n"
+            "1. Tool output that says bytes means BYTES. Never call bytes bits.\n"
+            "2. If a tool returns N bytes, report N bytes and, when useful, convert to GiB as N / 1073741824.\n"
+            "3. For the Ollama model list, the authoritative fields are the tool's bytes and GiB values. Do not reinterpret them.\n"
+            "4. Never invent parameter counts, quantization, context length, embedding size, or other metadata unless a tool actually returned it.\n\n"
+            "MEMORY DISCIPLINE:\n"
+            "1. A user statement containing a durable fact, preference, decision, task, or explicit remember instruction may be saved.\n"
+            "2. Do NOT save ordinary informational questions, status questions, or requests for explanations as memories.\n"
+            "3. Do not create memory merely because a question contains words such as project, model, Ollama, or CYRAX.\n\n"
             "RULES:\n"
             "1. When the user asks about live machine state, use the appropriate tool.\n"
             "2. When the user asks to create, modify, or execute something, actually call a tool; never merely print a proposed command.\n"
             "3. After a tool returns, inspect its result and answer based on that result.\n"
             "4. Never invent tool output, installed models, file contents, GPU state, or memories.\n"
-            "5. For explicit memory requests, use memory_save. Do not claim to remember unless the tool succeeds.\n"
+            "5. For explicit memory requests, use memory_save or the memory policy. Do not claim to remember unless saving succeeds.\n"
             "6. Use semantic memory when a prior user fact or project detail is relevant.\n"
             "7. Keep answers concise unless the user asks for detail.\n\n"
             f"REQUEST CLASSIFICATION:\n{live_hint}\n\n"
@@ -99,11 +104,7 @@ class CYRAX:
         if isinstance(message, dict):
             return message
         if message is not None:
-            return {
-                "role": getattr(message, "role", "assistant"),
-                "content": getattr(message, "content", ""),
-                "tool_calls": getattr(message, "tool_calls", None),
-            }
+            return {"role": getattr(message, "role", "assistant"), "content": getattr(message, "content", ""), "tool_calls": getattr(message, "tool_calls", None)}
         return {"role": "assistant", "content": str(response)}
 
     @staticmethod
