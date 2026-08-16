@@ -18,6 +18,10 @@ cases = [
     ("จำไว้ว่าชื่อโปรเจกต์ของฉันคือ CYRAX", "memory_save", "memory_save"),
     ("สร้างไฟล์ F:\\AI\\CYRAX\\ROUTER_TEST.txt", "action", "write_file"),
     ("อ่านไฟล์ F:\\AI\\CYRAX\\TEST_TOOL.txt", "live", "read_file"),
+    ("qwen3:8b คืออะไร?", "general", None),
+    ("qwen3:8b ใช้ทำอะไร?", "general", None),
+    ("qwen3:8b มีความสามารถอะไร?", "general", None),
+    ("ตอนนี้ qwen3:8b ถูกติดตั้งอยู่ไหม?", "live", None),
 ]
 
 failed = 0
