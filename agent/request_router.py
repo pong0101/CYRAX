@@ -40,6 +40,15 @@ class RequestRouter:
         if any(x in t for x in self.EXPLICIT_MEMORY):
             return Route("memory_save", "memory_save", "explicit memory request")
 
+        # A size question is a live fact, but it does not need the model
+        # inventory tool. The caller can answer from the runtime model-size
+        # context without treating it as an installed/uninstalled query.
+        if (
+            any(x in t for x in ("ขนาด", "size", "ใหญ่แค่ไหน", "กี่ gb", "กี่ gib"))
+            and any(x in t for x in ("โมเดล", "model", "qwen", "ollama"))
+        ):
+            return Route("live", None, "live model size question")
+
         # Current installed-model state is a live runtime fact. This must
         # outrank the generic ACTION keyword "ติดตั้ง".
         if (
