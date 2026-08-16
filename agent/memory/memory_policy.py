@@ -32,6 +32,18 @@ class MemoryPolicy:
         if any(marker in lower for marker in question_markers):
             return MemoryDecision(False, reason="informational question")
 
+        # Runtime inspection and read-only actions are ephemeral observations,
+        # not durable memories. In particular, never save a read_file request
+        # merely because its path contains the word "CYRAX" or "project".
+        runtime_action_markers = (
+            "อ่านไฟล์", "อ่าน ", "read file", "read ", "ดูไฟล์", "ดูเนื้อหา",
+            "ตรวจสอบไฟล์", "ตรวจสอบ ", "file content", "list directory", "directory",
+            "ตอนนี้", "ปัจจุบัน", "ล่าสุด", "สถานะ", "มีอะไรติดตั้ง", "ติดตั้งอยู่",
+            "ollama", "gpu", "ram", "cpu", "process", "running", "version", "เวอร์ชัน",
+        )
+        if any(marker in lower for marker in runtime_action_markers):
+            return MemoryDecision(False, reason="ephemeral runtime/read-only action")
+
         explicit = any(marker in lower for marker in (
             "จำไว้", "จำว่า", "remember this", "remember that", "เก็บไว้", "บันทึกไว้",
         ))
