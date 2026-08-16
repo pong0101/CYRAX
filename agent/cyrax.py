@@ -13,6 +13,7 @@ from interpreter import interpreter
 from memory import MemoryManager
 from memory.memory_policy import MemoryPolicy
 from tool_bridge import ToolBridge
+from truth_policy import TruthPolicy
 
 
 class CYRAX:
@@ -22,6 +23,7 @@ class CYRAX:
         self.memory = MemoryManager(str(self.vault_path))
         self.tools = ToolBridge(self.memory)
         self.memory_policy = MemoryPolicy()
+        self.truth_policy = TruthPolicy()
         self.last_source = "runtime"
 
         interpreter.llm.model = f"ollama_chat/{model}"
@@ -39,6 +41,15 @@ class CYRAX:
             return f"No relevant long-term memory was found. Retrieval mode: {mode}."
         return f"Retrieval mode: {mode}\n\n" + "\n\n".join(
             f"--- {item['path']} (score={item['score']}) ---\n{item['content']}" for item in results
+        )
+
+    def truth_policy_context(self) -> str:
+        """Expose the deterministic authority order to the runtime prompt."""
+        ranked = sorted(self.truth_policy.AUTHORITY.items(), key=lambda item: item[1], reverse=True)
+        order = " > ".join(source for source, _ in ranked)
+        return (
+            f"Authority order: {order}.\n"
+            "When evidence conflicts, choose the highest-authority source and treat lower-authority conflicting evidence as stale or historical."
         )
 
     @staticmethod
@@ -77,6 +88,7 @@ class CYRAX:
             if self._looks_live(user_message)
             else "This is not obviously a live-state request. Use relevant long-term memory when helpful."
         )
+        truth_context = self.truth_policy_context()
         return (
             "You are CYRAX, a local-first AI agent running on Windows.\n"
             f"Your active local model is {self.model} through Ollama.\n"
@@ -92,7 +104,8 @@ class CYRAX:
             "2. Current project files and explicit user statements come next.\n"
             "3. Obsidian long-term memory is context, not unquestionable truth.\n"
             "4. Old logs are historical evidence only.\n"
-            "5. If live evidence conflicts with memory, trust live evidence and say that memory was stale.\n\n"
+            "5. If live evidence conflicts with memory, trust live evidence and say that memory was stale.\n"
+            f"6. Deterministic policy enforced by runtime: {truth_context}\n\n"
             "TOOL RESULT INTEGRITY:\n"
             "1. A successful native tool result is authoritative evidence.\n"
             "2. Never claim a file is empty, missing, or unread when read_file returned actual content.\n"
@@ -180,6 +193,7 @@ class CYRAX:
         return f"Auto-memory saved: {path}"
 
     def run(self, user_message: str) -> str:
+        self.last_source = "runtime"
         deterministic = self._deterministic_runtime_answer(user_message)
         if deterministic is not None:
             self.history.extend([{"role": "user", "content": user_message}, {"role": "assistant", "content": deterministic}])
@@ -240,6 +254,7 @@ if __name__ == "__main__":
     print("Native Ollama tools: enabled (approval required for writes/PowerShell)")
     print("Second Brain: semantic recall + live-reality priority + conservative auto-memory")
     print("Tool routing: deterministic runtime facts + native live tools + PowerShell fallback")
+    print("Truth policy: live_tool > runtime > project_file > user_statement > memory > history > llm_knowledge")
     print("Type 'exit' to quit.")
     while True:
         try:
