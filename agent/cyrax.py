@@ -19,7 +19,9 @@ class CYRAX:
         ).expanduser().resolve()
         self.memory = MemoryManager(str(self.vault_path))
 
-        interpreter.llm.model = model
+        # Open Interpreter routes the model through LiteLLM. The explicit
+        # Ollama provider prefix avoids accidentally selecting another backend.
+        interpreter.llm.model = f"ollama/{model}"
         interpreter.llm.api_base = os.getenv(
             "CYRAX_OLLAMA_HOST", "http://127.0.0.1:11434"
         )
@@ -63,6 +65,7 @@ class CYRAX:
 if __name__ == "__main__":
     cyrax = CYRAX()
     print("CYRAX online.")
+    print(f"Model: {cyrax.model}")
     print(f"Obsidian memory: {cyrax.vault_path}")
     print("Type 'exit' to quit.")
 
