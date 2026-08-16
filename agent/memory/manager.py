@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -78,13 +78,22 @@ class MemoryManager:
     def _relative(self, path: Path) -> str:
         return path.relative_to(self.vault).as_posix()
 
-    def _readable_items(self) -> list[tuple[str, str]]:
+    @staticmethod
+    def _is_long_term_memory(rel: str) -> bool:
+        """Logs are historical evidence, not long-term memory by default."""
+        parts = Path(rel).parts
+        return "04_Logs" not in parts and not rel.startswith("04_Logs/")
+
+    def _readable_items(self, include_logs: bool = False) -> list[tuple[str, str]]:
         items: list[tuple[str, str]] = []
         for path in self.vault.rglob("*.md"):
             if ".cyrax" in path.parts:
                 continue
+            rel = self._relative(path)
+            if not include_logs and not self._is_long_term_memory(rel):
+                continue
             try:
-                items.append((self._relative(path), path.read_text(encoding="utf-8")))
+                items.append((rel, path.read_text(encoding="utf-8")))
             except (OSError, UnicodeDecodeError):
                 continue
         return items
@@ -93,7 +102,9 @@ class MemoryManager:
         changed = False
         known = self._index["items"]
         current_paths = set()
-        for rel, content in self._readable_items():
+        # Index durable memory only. Interaction logs remain historical evidence
+        # and are deliberately excluded from semantic recall by default.
+        for rel, content in self._readable_items(include_logs=False):
             current_paths.add(rel)
             digest = self._hash(content)
             item = known.get(rel)
@@ -118,12 +129,14 @@ class MemoryManager:
         if changed:
             self._save_index()
 
-    def semantic_search(self, query: str, limit: int = 5) -> tuple[list[dict[str, Any]], str]:
+    def semantic_search(self, query: str, limit: int = 5, include_logs: bool = False) -> tuple[list[dict[str, Any]], str]:
         self._ensure_index()
         try:
             qv = self._embed(query)
             scored: list[dict[str, Any]] = []
             for rel, item in self._index["items"].items():
+                if not include_logs and not self._is_long_term_memory(rel):
+                    continue
                 path = self.vault / rel
                 if not path.exists():
                     continue
@@ -133,12 +146,12 @@ class MemoryManager:
             scored.sort(key=lambda x: x["score"], reverse=True)
             return scored[:limit], "semantic"
         except Exception:
-            return self.search(query, limit=limit), "keyword-fallback"
+            return self.search(query, limit=limit, include_logs=include_logs), "keyword-fallback"
 
-    def search(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+    def search(self, query: str, limit: int = 5, include_logs: bool = False) -> list[dict[str, Any]]:
         terms = [t.lower() for t in re.findall(r"[\w\u0E00-\u0E7F]+", query) if len(t) > 1]
         scored: list[dict[str, Any]] = []
-        for rel, content in self._readable_items():
+        for rel, content in self._readable_items(include_logs=include_logs):
             lower = content.lower()
             score = sum(lower.count(term) for term in terms)
             if score:
