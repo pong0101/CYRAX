@@ -32,31 +32,64 @@ class CYRAX:
         self.history: list[dict[str, Any]] = []
 
     def memory_context(self, query: str, limit: int = 5) -> str:
-        results = self.memory.search(query, limit=limit)
+        results, mode = self.memory.semantic_search(query, limit=limit)
         if not results:
-            return "No relevant long-term memory was found."
-        return "\n\n".join(f"--- {item['path']} (score={item['score']}) ---\n{item['content']}" for item in results)
+            return f"No relevant long-term memory was found. Retrieval mode: {mode}."
+        return (
+            f"Retrieval mode: {mode}\n\n"
+            + "\n\n".join(
+                f"--- {item['path']} (score={item['score']}) ---\n{item['content']}" for item in results
+            )
+        )
+
+    @staticmethod
+    def _looks_live(user_message: str) -> bool:
+        text = user_message.lower()
+        live_terms = (
+            "ตอนนี้", "ปัจจุบัน", "ล่าสุด", "มีอะไรติดตั้ง", "สถานะ", "ใช้โมเดลอะไร",
+            "ollama", "gpu", "ram", "cpu", "ไฟล์นี้มี", "ไฟล์อะไร", "โฟลเดอร์",
+            "process", "running", "ติดตั้งอยู่", "version", "เวอร์ชัน",
+        )
+        return any(term in text for term in live_terms)
 
     def system_prompt(self, user_message: str) -> str:
         context = self.memory_context(user_message)
+        live_hint = (
+            "THIS IS A LIVE-STATE REQUEST. Do not answer from memory alone. Use the appropriate native tool first, then answer from its result."
+            if self._looks_live(user_message)
+            else
+            "This is not obviously a live-state request. Use relevant long-term memory when helpful."
+        )
         return (
             "You are CYRAX, a local-first AI agent running on Windows.\n"
             f"Your active local model is {self.model} through Ollama.\n"
             "Open Interpreter is installed as the computer/code execution layer.\n"
-            "CYRAX also exposes native Ollama tools for reliable local execution.\n\n"
+            "CYRAX uses an Obsidian vault as persistent long-term memory with semantic retrieval.\n\n"
+            "REALITY PRIORITY:\n"
+            "1. Live tool results are the highest authority for current machine state.\n"
+            "2. Current project files and explicit user statements come next.\n"
+            "3. Obsidian long-term memory is context, not unquestionable truth.\n"
+            "4. Old logs are historical evidence only.\n"
+            "5. If live evidence conflicts with memory, trust live evidence and say that memory was stale.\n\n"
             "RULES:\n"
             "1. When the user asks about live machine state, use the appropriate tool.\n"
             "2. When the user asks to create, modify, or execute something, actually call a tool; never merely print a proposed command.\n"
             "3. After a tool returns, inspect its result and answer based on that result.\n"
             "4. Never invent tool output, installed models, file contents, GPU state, or memories.\n"
             "5. For explicit memory requests, use memory_save. Do not claim to remember unless the tool succeeds.\n"
-            "6. Use memory_search when a prior user fact or project detail is relevant.\n"
+            "6. Use semantic memory when a prior user fact or project detail is relevant.\n"
             "7. Keep answers concise unless the user asks for detail.\n\n"
+            f"REQUEST CLASSIFICATION:\n{live_hint}\n\n"
             f"RELEVANT LONG-TERM MEMORY:\n{context}\n\nUSER REQUEST:\n{user_message}"
         )
 
     def _chat_once(self, messages: list[dict[str, Any]]) -> Any:
-        return ollama.chat(model=self.model, messages=messages, tools=self.tools.definitions(), options={"num_ctx": int(os.getenv("CYRAX_NUM_CTX", "8192"))})
+        return ollama.chat(
+            model=self.model,
+            messages=messages,
+            tools=self.tools.definitions(),
+            options={"num_ctx": int(os.getenv("CYRAX_NUM_CTX", "8192"))},
+        )
 
     @staticmethod
     def _message_dict(response: Any) -> dict[str, Any]:
@@ -66,7 +99,11 @@ class CYRAX:
         if isinstance(message, dict):
             return message
         if message is not None:
-            return {"role": getattr(message, "role", "assistant"), "content": getattr(message, "content", ""), "tool_calls": getattr(message, "tool_calls", None)}
+            return {
+                "role": getattr(message, "role", "assistant"),
+                "content": getattr(message, "content", ""),
+                "tool_calls": getattr(message, "tool_calls", None),
+            }
         return {"role": "assistant", "content": str(response)}
 
     @staticmethod
@@ -95,7 +132,11 @@ class CYRAX:
         return f"Auto-memory saved: {path}"
 
     def run(self, user_message: str) -> str:
-        messages: list[dict[str, Any]] = [{"role": "system", "content": self.system_prompt(user_message)}, *self.history, {"role": "user", "content": user_message}]
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": self.system_prompt(user_message)},
+            *self.history,
+            {"role": "user", "content": user_message},
+        ]
         for _ in range(8):
             response = self._chat_once(messages)
             message = self._message_dict(response)
@@ -129,9 +170,10 @@ if __name__ == "__main__":
     print("CYRAX online.")
     print(f"Model: {cyrax.model}")
     print(f"Obsidian memory: {cyrax.vault_path}")
+    print(f"Semantic memory model: {cyrax.memory.embedding_model}")
     print("Open Interpreter: installed / computer layer available")
     print("Native Ollama tools: enabled (approval required for writes/PowerShell)")
-    print("Second Brain: auto-recall + conservative auto-memory enabled")
+    print("Second Brain: semantic recall + live-reality priority + conservative auto-memory")
     print("Type 'exit' to quit.")
     while True:
         try:
