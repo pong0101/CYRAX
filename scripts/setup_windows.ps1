@@ -31,6 +31,11 @@ if (-not (Test-Path $venv)) {
   'astor==0.8.1' `
   'git-python==1.0.3' `
   'google-generativeai==0.7.2' `
+  'google-ai-generativelanguage==0.6.6' `
+  'google-api-core==2.30.3' `
+  'google-api-python-client==2.198.0' `
+  'google-auth==2.56.3' `
+  'google-auth-httplib2==0.4.1' `
   'html2image==2.0.7' `
   'html2text==2024.2.26' `
   'inquirer==3.4.1' `
@@ -56,8 +61,8 @@ if (-not (Test-Path $venv)) {
   'wget==3.2' `
   'yaspin==3.4.0'
 
-# setup_windows.ps1 is intentionally strict: reaching this point means every
-# command above completed successfully.
+# Do not reinstall setuptools after pinning it. This keeps pkg_resources
+# available for Open Interpreter 0.4.3.
 & $python -c "import interpreter, ollama, tiktoken; print('CYRAX runtime imports: OK'); print('tiktoken:', tiktoken.__version__)"
 
 # Create the default Obsidian second-brain vault outside the Git repository.
