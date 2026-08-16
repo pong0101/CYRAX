@@ -48,7 +48,7 @@ class RequestRouter:
         if ("ไฟล์" in t or "file" in t) and any(
             x in t for x in ("อ่าน", "read", "ดู", "ตรวจสอบ", "content", "เนื้อหา")
         ):
-            return Route("action", "read_file", "read-only file access")
+            return Route("live", "read_file", "live file content")
 
         if any(x in t for x in self.ACTION):
             if "ไฟล์" in t or "file" in t:
