@@ -40,11 +40,20 @@ class RequestRouter:
         if any(x in t for x in self.EXPLICIT_MEMORY):
             return Route("memory_save", "memory_save", "explicit memory request")
 
+        # Current installed-model state is a live runtime fact. This must
+        # outrank the generic ACTION keyword "ติดตั้ง".
+        if (
+            any(x in t for x in ("ตอนนี้", "ปัจจุบัน", "ล่าสุด", "มีอยู่ไหม", "ติดตั้งอยู่ไหม", "ติดตั้งไหม"))
+            and any(x in t for x in ("โมเดล", "model", "qwen", "ollama"))
+        ):
+            return Route("live", "ollama_models", "live installed-model state")
+
         # Explicit installed-model queries must hit Ollama, not memory.
         if "ollama" in t and any(x in t for x in ("โมเดล", "model", "ติดตั้ง", "installed", "มีอะไร")):
             return Route("live", "ollama_models", "live Ollama inventory")
 
-        # Read-only file access is an action routed to the narrow native read tool.
+        # Read-only file access is a live query routed to the narrow native
+        # read tool rather than the write/action path.
         if ("ไฟล์" in t or "file" in t) and any(
             x in t for x in ("อ่าน", "read", "ดู", "ตรวจสอบ", "content", "เนื้อหา")
         ):
