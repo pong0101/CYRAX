@@ -4,8 +4,17 @@ ollama:
   model: qwen3:8b
 
 obsidian:
-  vault_path: F:/AI/ObsidianMemory
+  vault_path: F:/AI/CYRAX-Vault
 
 interpreter:
   auto_run: false
   safe_mode: ask
+
+memory:
+  search_limit: 5
+  folders:
+    memories: 01_Memory
+    projects: 02_Projects
+    knowledge: 03_Knowledge
+    logs: 04_Logs
+    inbox: 99_Inbox
