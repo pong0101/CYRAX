@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -71,7 +72,8 @@ class CYRAX:
             "1. Tool output that says bytes means BYTES. Never call bytes bits.\n"
             "2. If a tool returns N bytes, report N bytes and, when useful, convert to GiB as N / 1073741824.\n"
             "3. For the Ollama model list, the authoritative fields are the tool's bytes and GiB values. Do not reinterpret them.\n"
-            "4. Never invent parameter counts, quantization, context length, embedding size, or other metadata unless a tool actually returned it.\n\n"
+            "4. Never invent parameter counts, quantization, context length, embedding size, or other metadata unless a tool actually returned it.\n"
+            "5. Before answering a tool-backed size question, copy the unit exactly from the tool result.\n\n"
             "MEMORY DISCIPLINE:\n"
             "1. A user statement containing a durable fact, preference, decision, task, or explicit remember instruction may be saved.\n"
             "2. Do NOT save ordinary informational questions, status questions, or requests for explanations as memories.\n"
@@ -123,6 +125,29 @@ class CYRAX:
         arguments = getattr(fn, "arguments", {}) or {}
         return name, arguments if isinstance(arguments, dict) else {}
 
+    @staticmethod
+    def _normalize_tool_units(answer: str, messages: list[dict[str, Any]]) -> str:
+        """Prevent LLM unit hallucinations when a live tool supplied an exact unit.
+
+        This is intentionally narrow: only a number explicitly returned as `bytes`
+        by a tool is corrected if the final answer incorrectly labels that same
+        number as bits/บิต. Other units are never guessed or rewritten.
+        """
+        if not answer:
+            return answer
+        tool_text = "\n".join(
+            str(message.get("content", ""))
+            for message in messages
+            if message.get("role") == "tool"
+        )
+        if not tool_text or "bytes" not in tool_text.lower():
+            return answer
+
+        byte_numbers = set(re.findall(r"(?<!\d)(\d{1,3}(?:,\d{3})+|\d+)(?=\s+bytes\b)", tool_text, flags=re.IGNORECASE))
+        for number in byte_numbers:
+            answer = re.sub(rf"(?<!\d){re.escape(number)}(?=\s*(?:บิต|bits?)\b)", f"{number} bytes", answer, flags=re.IGNORECASE)
+        return answer
+
     def _auto_memory(self, user_message: str) -> str | None:
         decision = self.memory_policy.classify(user_message)
         if not decision.should_save:
@@ -144,6 +169,7 @@ class CYRAX:
             tool_calls = self._tool_calls(message)
             if not tool_calls:
                 answer = str(message.get("content", "")).strip()
+                answer = self._normalize_tool_units(answer, messages)
                 try:
                     memory_result = self._auto_memory(user_message)
                     if memory_result:
