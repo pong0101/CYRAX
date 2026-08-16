@@ -10,40 +10,32 @@ import ollama
 from interpreter import interpreter
 
 from memory import MemoryManager
-from memory_policy import MemoryPolicy
+from memory.memory_policy import MemoryPolicy
 from tool_bridge import ToolBridge
 
 
 class CYRAX:
     def __init__(self, model: str = "qwen3:8b", vault_path: str | None = None):
         self.model = model
-        self.vault_path = Path(
-            vault_path or os.getenv("CYRAX_OBSIDIAN_VAULT", "F:/AI/CYRAX-Vault")
-        ).expanduser().resolve()
+        self.vault_path = Path(vault_path or os.getenv("CYRAX_OBSIDIAN_VAULT", "F:/AI/CYRAX-Vault")).expanduser().resolve()
         self.memory = MemoryManager(str(self.vault_path))
         self.tools = ToolBridge(self.memory)
         self.memory_policy = MemoryPolicy()
 
         interpreter.llm.model = f"ollama_chat/{model}"
-        interpreter.llm.api_base = os.getenv(
-            "CYRAX_OLLAMA_API_BASE", "http://127.0.0.1:11434"
-        )
+        interpreter.llm.api_base = os.getenv("CYRAX_OLLAMA_API_BASE", "http://127.0.0.1:11434")
         interpreter.llm.supports_functions = True
         interpreter.llm.supports_vision = False
         interpreter.computer.offline = True
         interpreter.auto_run = False
         interpreter.safe_mode = "ask"
-
         self.history: list[dict[str, Any]] = []
 
     def memory_context(self, query: str, limit: int = 5) -> str:
         results = self.memory.search(query, limit=limit)
         if not results:
             return "No relevant long-term memory was found."
-        return "\n\n".join(
-            f"--- {item['path']} (score={item['score']}) ---\n{item['content']}"
-            for item in results
-        )
+        return "\n\n".join(f"--- {item['path']} (score={item['score']}) ---\n{item['content']}" for item in results)
 
     def system_prompt(self, user_message: str) -> str:
         context = self.memory_context(user_message)
@@ -60,17 +52,11 @@ class CYRAX:
             "5. For explicit memory requests, use memory_save. Do not claim to remember unless the tool succeeds.\n"
             "6. Use memory_search when a prior user fact or project detail is relevant.\n"
             "7. Keep answers concise unless the user asks for detail.\n\n"
-            f"RELEVANT LONG-TERM MEMORY:\n{context}\n\n"
-            f"USER REQUEST:\n{user_message}"
+            f"RELEVANT LONG-TERM MEMORY:\n{context}\n\nUSER REQUEST:\n{user_message}"
         )
 
     def _chat_once(self, messages: list[dict[str, Any]]) -> Any:
-        return ollama.chat(
-            model=self.model,
-            messages=messages,
-            tools=self.tools.definitions(),
-            options={"num_ctx": int(os.getenv("CYRAX_NUM_CTX", "8192"))},
-        )
+        return ollama.chat(model=self.model, messages=messages, tools=self.tools.definitions(), options={"num_ctx": int(os.getenv("CYRAX_NUM_CTX", "8192"))})
 
     @staticmethod
     def _message_dict(response: Any) -> dict[str, Any]:
@@ -80,11 +66,7 @@ class CYRAX:
         if isinstance(message, dict):
             return message
         if message is not None:
-            return {
-                "role": getattr(message, "role", "assistant"),
-                "content": getattr(message, "content", ""),
-                "tool_calls": getattr(message, "tool_calls", None),
-            }
+            return {"role": getattr(message, "role", "assistant"), "content": getattr(message, "content", ""), "tool_calls": getattr(message, "tool_calls", None)}
         return {"role": "assistant", "content": str(response)}
 
     @staticmethod
@@ -104,72 +86,38 @@ class CYRAX:
         return name, arguments if isinstance(arguments, dict) else {}
 
     def _auto_memory(self, user_message: str) -> str | None:
-        """Persist only explicit or high-confidence facts; never store normal chat."""
         decision = self.memory_policy.classify(user_message)
         if not decision.should_save:
             return None
-
-        folder = "01_Memory"
-        if decision.category == "project":
-            folder = "02_Projects"
-        elif decision.category == "preference":
-            folder = "01_Memory"
-
-        title = decision.title
-        content = (
-            f"Original user statement:\n\n{user_message}\n\n"
-            f"Classification: {decision.category}\n"
-            f"Reason: {decision.reason}"
-        )
-        path = self.memory.remember(
-            title=title,
-            content=content,
-            folder=folder,
-            memory_type=decision.category,
-        )
+        folder = "02_Projects" if decision.category == "project" else "01_Memory"
+        content = f"Original user statement:\n\n{user_message}\n\nClassification: {decision.category}\nReason: {decision.reason}"
+        path = self.memory.remember(title=decision.title, content=content, folder=folder, memory_type=decision.category)
         return f"Auto-memory saved: {path}"
 
     def run(self, user_message: str) -> str:
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": self.system_prompt(user_message)},
-            *self.history,
-            {"role": "user", "content": user_message},
-        ]
-
+        messages: list[dict[str, Any]] = [{"role": "system", "content": self.system_prompt(user_message)}, *self.history, {"role": "user", "content": user_message}]
         for _ in range(8):
             response = self._chat_once(messages)
             message = self._message_dict(response)
             tool_calls = self._tool_calls(message)
-
             if not tool_calls:
                 answer = str(message.get("content", "")).strip()
-                memory_result = self._auto_memory(user_message)
-                if memory_result:
-                    print(f"\nCYRAX memory: {memory_result}")
-                self.history.extend(
-                    [
-                        {"role": "user", "content": user_message},
-                        {"role": "assistant", "content": answer},
-                    ]
-                )
+                try:
+                    memory_result = self._auto_memory(user_message)
+                    if memory_result:
+                        print(f"\nCYRAX memory: {memory_result}")
+                except Exception as exc:
+                    print(f"\nCYRAX memory warning: {exc}")
+                self.history.extend([{"role": "user", "content": user_message}, {"role": "assistant", "content": answer}])
                 self.memory.log(f"User: {user_message}\nCYRAX: {answer}")
                 return answer
-
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": message.get("content", ""),
-                    "tool_calls": tool_calls,
-                }
-            )
-
+            messages.append({"role": "assistant", "content": message.get("content", ""), "tool_calls": tool_calls})
             for call in tool_calls:
                 name, arguments = self._call_parts(call)
                 print(f"\nCYRAX tool: {name}")
                 result = self.tools.call(name, arguments)
                 print(result)
                 messages.append({"role": "tool", "content": result})
-
         return "I stopped after too many tool calls. Please try the request again."
 
     def remember(self, title: str, content: str, folder: str = "01_Memory") -> Path:
@@ -185,20 +133,17 @@ if __name__ == "__main__":
     print("Native Ollama tools: enabled (approval required for writes/PowerShell)")
     print("Second Brain: auto-recall + conservative auto-memory enabled")
     print("Type 'exit' to quit.")
-
     while True:
         try:
             message = input("\nYou > ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\nCYRAX offline.")
             break
-
         if message.lower() in {"exit", "quit"}:
             print("CYRAX offline.")
             break
         if not message:
             continue
-
         try:
             response = cyrax.run(message)
             if response:
