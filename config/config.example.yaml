@@ -1,0 +1,11 @@
+# Copy to config.yaml and edit for your machine.
+ollama:
+  host: http://127.0.0.1:11434
+  model: qwen3:8b
+
+obsidian:
+  vault_path: F:/AI/ObsidianMemory
+
+interpreter:
+  auto_run: false
+  safe_mode: ask
