@@ -21,6 +21,17 @@ class MemoryPolicy:
         if len(value) < 8:
             return MemoryDecision(False, reason="too short")
 
+        # Questions and requests for information are not durable memories by
+        # themselves. This prevents CYRAX from filling the vault with files
+        # such as "โปรเจกต์หลักของเราชื่ออะไร".
+        question_markers = (
+            "?", "？", "อะไร", "ไหน", "เท่าไหร่", "เท่าไร", "กี่", "ไหม", "หรือไม่",
+            "อย่างไร", "ยังไง", "ทำไม", "เมื่อไหร่", "เมื่อไร", "how ", "what ",
+            "where ", "when ", "why ", "which ", "who ",
+        )
+        if any(marker in lower for marker in question_markers):
+            return MemoryDecision(False, reason="informational question")
+
         explicit = any(marker in lower for marker in (
             "จำไว้", "จำว่า", "remember this", "remember that", "เก็บไว้", "บันทึกไว้",
         ))
@@ -28,7 +39,7 @@ class MemoryPolicy:
             "ฉันชอบ", "ผมชอบ", "ต้องการให้", "อยากให้", "ไม่ต้อง", "prefer", "i want",
         ))
         project = any(marker in lower for marker in (
-            "โปรเจกต์", "project", "cyrAX", "cyrax", "โมเดลหลัก", "architecture",
+            "โปรเจกต์", "project", "cyrax", "โมเดลหลัก", "architecture",
         ))
         decision = any(marker in lower for marker in (
             "ตัดสินใจ", "สรุปว่า", "เลือกใช้", "decision", "we will use",
