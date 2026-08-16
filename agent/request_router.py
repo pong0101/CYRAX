@@ -29,6 +29,7 @@ class RequestRouter:
     ACTION = (
         "สร้าง", "เขียน", "แก้ไข", "ลบ", "ย้าย", "เปลี่ยนชื่อ", "รัน", "execute",
         "run ", "ติดตั้ง", "ถอนการติดตั้ง", "เปิด", "ปิด", "ตรวจสอบไฟล์", "เขียนไฟล์",
+        "อ่านไฟล์", "อ่าน", "read file", "read", "ดูไฟล์", "ดูเนื้อหา", "เนื้อหาไฟล์",
     )
     EXPLICIT_MEMORY = (
         "จำไว้ว่", "จำไว้ว่า", "จดจำ", "บันทึกความจำ", "remember that", "remember this",
@@ -43,10 +44,14 @@ class RequestRouter:
         if "ollama" in t and any(x in t for x in ("โมเดล", "model", "ติดตั้ง", "installed", "มีอะไร")):
             return Route("live", "ollama_models", "live Ollama inventory")
 
+        # Read-only file access is an action routed to the narrow native read tool.
+        if ("ไฟล์" in t or "file" in t) and any(
+            x in t for x in ("อ่าน", "read", "ดู", "ตรวจสอบ", "content", "เนื้อหา")
+        ):
+            return Route("action", "read_file", "read-only file access")
+
         if any(x in t for x in self.ACTION):
             if "ไฟล์" in t or "file" in t:
-                if any(x in t for x in ("อ่าน", "ดู", "ตรวจสอบ", "มี", "content", "เนื้อหา")):
-                    return Route("live", "read_file", "live file content")
                 return Route("action", "write_file", "file mutation")
             return Route("action", "execute_powershell", "machine action; native narrow tool preferred")
 
