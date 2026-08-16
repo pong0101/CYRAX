@@ -22,6 +22,7 @@ class CYRAX:
         self.memory = MemoryManager(str(self.vault_path))
         self.tools = ToolBridge(self.memory)
         self.memory_policy = MemoryPolicy()
+        self.last_source = "runtime"
 
         interpreter.llm.model = f"ollama_chat/{model}"
         interpreter.llm.api_base = os.getenv("CYRAX_OLLAMA_API_BASE", "http://127.0.0.1:11434")
@@ -44,11 +45,44 @@ class CYRAX:
     def _looks_live(user_message: str) -> bool:
         text = user_message.lower()
         live_terms = (
-            "ตอนนี้", "ปัจจุบัน", "ล่าสุด", "มีอะไรติดตั้ง", "สถานะ", "ใช้โมเดลอะไร",
-            "ollama", "gpu", "ram", "cpu", "ไฟล์นี้มี", "ไฟล์อะไร", "โฟลเดอร์",
+            "ตอนนี้", "ปัจจุบัน", "ล่าสุด", "มีอะไรติดตั้ง", "สถานะ", "ollama",
+            "gpu", "ram", "cpu", "ไฟล์นี้มี", "ไฟล์อะไร", "โฟลเดอร์",
             "process", "running", "ติดตั้งอยู่", "version", "เวอร์ชัน",
         )
         return any(term in text for term in live_terms)
+
+    @staticmethod
+    def _is_runtime_model_question(user_message: str) -> bool:
+        """Return True for questions about CYRAX's configured main model.
+
+        These are deterministic runtime facts and must not trigger an Ollama
+        inventory lookup. A request explicitly asking what is installed in
+        Ollama remains a live tool request.
+        """
+        text = user_message.strip().lower()
+        if "ollama" in text and any(term in text for term in ("ติดตั้ง", "มีโมเดล", "models", "installed")):
+            return False
+        patterns = (
+            "cyrax ใช้โมเดลอะไร",
+            "cyrax ใช้โมเดลไหน",
+            "cyrax ใช้ llm อะไร",
+            "cyrax ใช้ llm ไหน",
+            "โมเดลหลักของ cyrax",
+            "โมเดลหลักคืออะไร",
+            "ใช้โมเดลหลักอะไร",
+            "ระบบสมองของโปรเจกต์นี้",
+            "ระบบสมองของโปรเจคนี้",
+            "main model",
+            "main llm",
+            "active model",
+        )
+        return any(pattern in text for pattern in patterns)
+
+    def _deterministic_runtime_answer(self, user_message: str) -> str | None:
+        if self._is_runtime_model_question(user_message):
+            self.last_source = "runtime"
+            return f"CYRAX ใช้โมเดลหลัก **{self.model}** ผ่าน Ollama\n\n[Source: Runtime]"
+        return None
 
     def system_prompt(self, user_message: str) -> str:
         context = self.memory_context(user_message)
@@ -62,6 +96,11 @@ class CYRAX:
             f"Your active local model is {self.model} through Ollama.\n"
             "Open Interpreter is installed as the computer/code execution layer.\n"
             "CYRAX uses an Obsidian vault as persistent long-term memory with semantic retrieval.\n\n"
+            "TOOL PRIORITY:\n"
+            "1. Deterministic runtime facts such as CYRAX's configured model are answered by CYRAX runtime, not by tools.\n"
+            "2. Live machine state uses the appropriate native tool.\n"
+            "3. Actions use the narrowest native tool available.\n"
+            "4. PowerShell is a fallback only when no narrower native tool can perform the task.\n\n"
             "REALITY PRIORITY:\n"
             "1. Live tool results are the highest authority for current machine state.\n"
             "2. Current project files and explicit user statements come next.\n"
@@ -127,16 +166,7 @@ class CYRAX:
 
     @staticmethod
     def _normalize_tool_units(answer: str, messages: list[dict[str, Any]]) -> str:
-        """Prevent LLM unit hallucinations when a live tool supplied an exact unit.
-
-        Only exact byte values returned by a tool are normalized. This handles
-        both forms produced by the model:
-          * "5,225,388,164 บิต"
-          * "5,225,388,164 bytes บิต"
-        The second form is the important case: the model has already emitted the
-        correct unit and then appended an incorrect duplicate unit. In that case
-        the duplicate is removed rather than replacing the valid `bytes` label.
-        """
+        """Prevent LLM unit hallucinations when a live tool supplied an exact unit."""
         if not answer:
             return answer
 
@@ -157,15 +187,12 @@ class CYRAX:
         )
 
         for number in byte_numbers:
-            # Correct an already-correct bytes label followed by a hallucinated
-            # bits/บิต label: "N bytes บิต" -> "N bytes".
             answer = re.sub(
                 rf"(?<!\d){re.escape(number)}\s+bytes\s+(?:บิต|bits?)\b",
                 f"{number} bytes",
                 answer,
                 flags=re.IGNORECASE,
             )
-            # Correct a number directly mislabeled as bits: "N บิต" -> "N bytes".
             answer = re.sub(
                 rf"(?<!\d){re.escape(number)}(?=\s*(?:บิต|bits?)\b)",
                 f"{number} bytes",
@@ -185,6 +212,12 @@ class CYRAX:
         return f"Auto-memory saved: {path}"
 
     def run(self, user_message: str) -> str:
+        deterministic = self._deterministic_runtime_answer(user_message)
+        if deterministic is not None:
+            self.history.extend([{"role": "user", "content": user_message}, {"role": "assistant", "content": deterministic}])
+            self.memory.log(f"User: {user_message}\nCYRAX: {deterministic}")
+            return deterministic
+
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": self.system_prompt(user_message)},
             *self.history,
@@ -212,6 +245,7 @@ class CYRAX:
                 print(f"\nCYRAX tool: {name}")
                 result = self.tools.call(name, arguments)
                 print(result)
+                self.last_source = "live_tool" if name in {"ollama_models", "read_file", "list_directory"} else "action"
                 messages.append({"role": "tool", "content": result})
         return "I stopped after too many tool calls. Please try the request again."
 
@@ -228,6 +262,7 @@ if __name__ == "__main__":
     print("Open Interpreter: installed / computer layer available")
     print("Native Ollama tools: enabled (approval required for writes/PowerShell)")
     print("Second Brain: semantic recall + live-reality priority + conservative auto-memory")
+    print("Tool routing: deterministic runtime facts + native live tools + PowerShell fallback")
     print("Type 'exit' to quit.")
     while True:
         try:
