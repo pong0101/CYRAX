@@ -1,7 +1,9 @@
-# Core runtime
+# CYRAX runtime
+# Open Interpreter 0.4.3 declares tiktoken<0.8, while modern LiteLLM requires
+# tiktoken>=0.8. These constraints conflict at pip-resolution time.
+# setup_windows.ps1 therefore installs these two packages in a controlled order.
 open-interpreter==0.4.3
-# Pin a wheel-backed LiteLLM release so Windows/Python 3.12 does not
-# fall back to compiling an older source distribution with Rust/Cargo.
 litellm==1.97.0
+tiktoken==0.8.0
 ollama==0.6.2
 PyYAML==6.0.3
