@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import sys
-import tempfile
 import types
+
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -11,10 +11,10 @@ sys.path.insert(0, str(ROOT / "agent"))
 
 # The reconciliation contract only needs interpreter.llm.model. Keep this
 # verification deterministic and independent from the full Open Interpreter
-# dependency graph used by the Windows runtime.
+# dependency graph and semantic indexing used by the Windows runtime.
 fake_interpreter = types.ModuleType("interpreter")
 fake_interpreter.interpreter = types.SimpleNamespace(
-    llm=types.SimpleNamespace(model=""),
+    llm=types.SimpleNamespace(model="ollama_chat/qwen3:14b"),
 )
 sys.modules["interpreter"] = fake_interpreter
 
@@ -33,68 +33,65 @@ def check(label: str, ok: bool, detail: str = "") -> None:
         failed += 1
 
 
-with tempfile.TemporaryDirectory() as temp:
-    manager = MemoryManager(temp)
-    old_path = manager.remember(
-        "main-model",
-        "CYRAX main model is qwen3:8b.",
-        memory_type="project",
-    )
+class StubMemory:
+    """Deterministic memory surface for testing reconciliation itself."""
 
-    fake_interpreter.interpreter.llm.model = "ollama_chat/qwen3:14b"
-    reconciled = manager.reconcile_runtime_model()
-    evidence = manager._parse_frontmatter(old_path.read_text(encoding="utf-8"))
+    def __init__(self, content: str):
+        self.item = {
+            "path": "01_Memory/main-model.md",
+            "content": content,
+            "evidence": {"status": "active"},
+        }
+        self.marked: list[tuple[str, str, str | None]] = []
 
-    check("Runtime model is discovered from interpreter", manager._runtime_model() == "qwen3:14b")
-    check("Conflicting main-model memory is reconciled", len(reconciled) == 1)
-    check("Conflicting memory becomes stale", evidence.status == "stale")
-    check(
-        "Stale memory records runtime replacement",
-        evidence.superseded_by == "runtime:main_model=qwen3:14b",
-    )
+    def search(self, _query: str, limit: int = 10):
+        return [self.item]
 
-    thai_path = manager.remember(
-        "thai-main-model",
-        "โมเดลหลักของ CYRAX คือ qwen3:8b",
-        memory_type="project",
-    )
-    thai_reconciled = manager.reconcile_runtime_model()
-    thai_evidence = manager._parse_frontmatter(thai_path.read_text(encoding="utf-8"))
-    check("Thai main-model claim is detected", len(thai_reconciled) == 1)
-    check("Thai conflicting memory becomes stale", thai_evidence.status == "stale")
+    def mark_status(self, path: str, status: str, superseded_by: str | None = None):
+        self.marked.append((path, status, superseded_by))
+        self.item["evidence"]["status"] = status
 
-    # Test the equal-value contract directly against the reconciliation
-    # function. This isolates the invariant from Ollama/semantic indexing
-    # behavior and guarantees that equal evidence never creates a conflict.
-    matching_item = {
-        "path": "01_Memory/main-model.md",
-        "content": "---\nstatus: active\n---\n# main-model\n\nCYRAX main model is qwen3:14b.\n",
-        "evidence": {"status": "active"},
-    }
 
-    class MatchingMemory:
-        def __init__(self):
-            self.marked = False
+# Runtime model discovery is tested through the actual runtime-aware manager.
+runtime_manager = MemoryManager("unused")
+check(
+    "Runtime model is discovered from interpreter",
+    runtime_manager._runtime_model() == "qwen3:14b",
+)
 
-        def search(self, _query: str, limit: int = 10):
-            return [matching_item]
+# Conflicting English claim must be reconciled without semantic/Ollama indexing.
+english = StubMemory("CYRAX main model is qwen3:8b.")
+reconciled = reconcile_main_model(english, "qwen3:14b")
+check("Conflicting main-model memory is reconciled", len(reconciled) == 1)
+check("Conflicting memory becomes stale", english.item["evidence"]["status"] == "stale")
+check(
+    "Stale memory records runtime replacement",
+    english.marked == [
+        (
+            "01_Memory/main-model.md",
+            "stale",
+            "runtime:main_model=qwen3:14b",
+        )
+    ],
+)
 
-        def mark_status(self, *_args, **_kwargs):
-            self.marked = True
+# Thai explicit claim must follow the same policy.
+thai = StubMemory("โมเดลหลักของ CYRAX คือ qwen3:8b")
+thai_reconciled = reconcile_main_model(thai, "qwen3:14b")
+check("Thai main-model claim is detected", len(thai_reconciled) == 1)
+check("Thai conflicting memory becomes stale", thai.item["evidence"]["status"] == "stale")
 
-    matching_manager = MatchingMemory()
-    reconciled_again = reconcile_main_model(matching_manager, "qwen3:14b")
-    check("Matching runtime evidence produces no new conflict", len(reconciled_again) == 0)
-    check("Matching runtime evidence is not marked stale", not matching_manager.marked)
+# Equal-value evidence is a no-op and must never mark memory stale.
+matching = StubMemory("CYRAX main model is qwen3:14b.")
+matching_reconciled = reconcile_main_model(matching, "qwen3:14b")
+check("Matching runtime evidence produces no new conflict", len(matching_reconciled) == 0)
+check("Matching runtime evidence is not marked stale", matching.marked == [])
 
-    casual_path = manager.remember(
-        "model-note",
-        "We previously tested qwen3:8b and qwen3:14b during development.",
-        memory_type="project",
-    )
-    manager.reconcile_runtime_model()
-    casual_evidence = manager._parse_frontmatter(casual_path.read_text(encoding="utf-8"))
-    check("Casual model mentions are ignored", casual_evidence.status == "active")
+# Casual model mentions are intentionally ignored by the claim extractor.
+casual = StubMemory("We previously tested qwen3:8b and qwen3:14b during development.")
+casual_reconciled = reconcile_main_model(casual, "qwen3:14b")
+check("Casual model mentions are ignored", len(casual_reconciled) == 0)
+check("Casual model memory remains active", casual.item["evidence"]["status"] == "active")
 
 print(f"\n=== RESULT: {passed} passed / {failed} failed ===")
 raise SystemExit(1 if failed else 0)
