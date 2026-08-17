@@ -4,6 +4,16 @@
 
 The project is designed to keep the agent practical, inspectable, and local: current machine facts come from live tools, durable knowledge lives in Obsidian, and the LLM is used for reasoning and language rather than being treated as the final authority on reality.
 
+## North Star
+
+> **Local-first Personal Autonomous Intelligence**
+>
+> **Perceive → Remember → Verify → Reason → Plan → Act → Verify → Learn**
+
+CYRAX is not primarily an LLM wrapper or chatbot. The long-term goal is a persistent personal intelligence that can understand goals, maintain project knowledge, inspect current reality, distinguish stale memory from current evidence, plan multi-step work, execute controlled actions, verify results, and learn from outcomes — while keeping the owner in control.
+
+See the full [North Star and execution roadmap](docs/CYRAX_NORTH_STAR.md) and [architecture diagrams](docs/CYRAX_ARCHITECTURE.md).
+
 ## Current Status
 
 🚀 **Foundation complete — Runtime / Memory / Tools / Truth Policy are integrated.**
@@ -144,6 +154,8 @@ CYRAX/
 ├── config/
 ├── tests/
 ├── docs/
+│   ├── CYRAX_NORTH_STAR.md
+│   └── CYRAX_ARCHITECTURE.md
 ├── requirements.txt
 └── README.md
 ```
@@ -188,15 +200,17 @@ The repository's current local baseline is **38/38 tests passing**.
 - [x] Unit normalization and evidence integrity guards
 - [x] UTF-8 source regression protection
 
-### Phase 2 — Truth-Aware Second Brain
+### Phase 2 — Truth-Aware Second Brain **← NEXT**
 
-Next priorities:
+1. **Structured provenance** — every durable memory records source, timestamp, confidence, type, and verification state.
+2. **Evidence-backed retrieval** — retrieval returns useful provenance instead of bare text.
+3. **Conflict detection** — compare live/project/user evidence with memory when facts overlap.
+4. **Stale-state handling** — mark superseded memories as stale/contradicted instead of silently treating them as current.
+5. **Memory promotion** — consolidate repeated validated observations into durable project knowledge.
+6. **Memory maintenance** — detect duplicates, stale notes, and contradictory project facts.
+7. **Regression suite** — preserve the 38/38 baseline while adding memory provenance and temporal-conflict tests.
 
-1. **Truth-aware retrieval** — attach source, timestamp, and confidence metadata to recalled memories.
-2. **Conflict detection in normal conversations** — automatically surface stale memory when live/project evidence disagrees.
-3. **Evidence-backed answers** — let CYRAX expose why a fact was chosen without dumping internal implementation details.
-4. **Memory promotion** — consolidate repeated observations into durable project knowledge instead of saving raw interactions.
-5. **Memory maintenance** — detect duplicates, stale notes, and contradictory project facts.
+**Immediate implementation target:** make the memory layer evidence-aware without changing its human-readable Markdown nature.
 
 ### Phase 3 — Agent Planning
 
@@ -215,14 +229,13 @@ Next priorities:
 - project-aware automation
 - optional voice interface
 
-### Phase 5 — Evaluation and Hardening
+### Phase 5 — Personal Autonomous Intelligence
 
-- end-to-end scenario suites
-- adversarial hallucination tests
-- tool misuse tests
-- memory poisoning/conflict tests
-- performance and latency benchmarks
-- regression CI for routing, truth, memory, and tools
+- long-running goals and projects
+- proactive monitoring within explicit user-defined boundaries
+- continuous project-state synthesis
+- learned preferences/workflows with provenance
+- self-diagnosis and subsystem maintenance
 
 ## Development Rule
 
