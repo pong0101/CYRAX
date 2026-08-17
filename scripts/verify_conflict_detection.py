@@ -54,7 +54,7 @@ with tempfile.TemporaryDirectory() as temp:
         "Stale memory records its replacement",
         evidence.superseded_by == "live_tool:main_model=qwen3:14b",
     )
-    results, _ = manager.search("main model")
+    results = manager.search("main model")
     check("Search exposes evidence metadata", bool(results) and results[0]["evidence"]["status"] == "stale")
 
 print(f"\n=== RESULT: {passed} passed / {failed} failed ===")
