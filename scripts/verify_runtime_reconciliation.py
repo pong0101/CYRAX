@@ -43,6 +43,16 @@ with tempfile.TemporaryDirectory() as temp:
         evidence.superseded_by == "runtime:main_model=qwen3:14b",
     )
 
+    thai_path = manager.remember(
+        "thai-main-model",
+        "โมเดลหลักของ CYRAX คือ qwen3:8b",
+        memory_type="project",
+    )
+    thai_reconciled = manager.reconcile_runtime_model()
+    thai_evidence = manager._parse_frontmatter(thai_path.read_text(encoding="utf-8"))
+    check("Thai main-model claim is detected", len(thai_reconciled) == 1)
+    check("Thai conflicting memory becomes stale", thai_evidence.status == "stale")
+
     same_path = manager.remember(
         "current-model",
         "CYRAX main model is qwen3:14b.",
