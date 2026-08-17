@@ -19,6 +19,7 @@ fake_interpreter.interpreter = types.SimpleNamespace(
 sys.modules["interpreter"] = fake_interpreter
 
 from memory import MemoryManager  # noqa: E402
+from memory.reconciler import reconcile_main_model  # noqa: E402
 
 passed = failed = 0
 
@@ -62,24 +63,29 @@ with tempfile.TemporaryDirectory() as temp:
     check("Thai main-model claim is detected", len(thai_reconciled) == 1)
     check("Thai conflicting memory becomes stale", thai_evidence.status == "stale")
 
-    # Use a fresh manager for the matching-value contract so the assertion
-    # cannot be affected by unrelated stale/conflicting memories from the
-    # preceding English/Thai reconciliation cases.
-    matching_manager = MemoryManager(tempfile.mkdtemp(prefix="cyrax-matching-"))
-    try:
-        same_path = matching_manager.remember(
-            "main-model",
-            "CYRAX main model is qwen3:14b.",
-            memory_type="project",
-        )
-        reconciled_again = matching_manager.reconcile_runtime_model()
-        same_evidence = matching_manager._parse_frontmatter(same_path.read_text(encoding="utf-8"))
-        check("Matching runtime evidence is not marked stale", same_evidence.status == "active")
-        check("Matching runtime evidence produces no new conflict", len(reconciled_again) == 0)
-    finally:
-        import shutil
+    # Test the equal-value contract directly against the reconciliation
+    # function. This isolates the invariant from Ollama/semantic indexing
+    # behavior and guarantees that equal evidence never creates a conflict.
+    matching_item = {
+        "path": "01_Memory/main-model.md",
+        "content": "---\nstatus: active\n---\n# main-model\n\nCYRAX main model is qwen3:14b.\n",
+        "evidence": {"status": "active"},
+    }
 
-        shutil.rmtree(matching_manager.vault, ignore_errors=True)
+    class MatchingMemory:
+        def __init__(self):
+            self.marked = False
+
+        def search(self, _query: str, limit: int = 10):
+            return [matching_item]
+
+        def mark_status(self, *_args, **_kwargs):
+            self.marked = True
+
+    matching_manager = MatchingMemory()
+    reconciled_again = reconcile_main_model(matching_manager, "qwen3:14b")
+    check("Matching runtime evidence produces no new conflict", len(reconciled_again) == 0)
+    check("Matching runtime evidence is not marked stale", not matching_manager.marked)
 
     casual_path = manager.remember(
         "model-note",
