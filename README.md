@@ -16,7 +16,7 @@ See the full [North Star and execution roadmap](docs/CYRAX_NORTH_STAR.md) and [a
 
 ## Current Status
 
-🚀 **Foundation complete — Runtime / Memory / Tools / Truth Policy are integrated.**
+🚀 **Phase 1 complete. Phase 2.1 merged. Phase 2.2 — Conflict Detection is now in implementation.**
 
 Current main model:
 
@@ -26,7 +26,7 @@ Current main model:
 - **Execution layer:** Open Interpreter
 - **Long-term memory:** Obsidian Markdown vault
 
-The current verification baseline is:
+The verification baseline on `main` remains:
 
 ```text
 Unicode Source       3/3 PASS
@@ -37,6 +37,8 @@ Request Routing      10/10 PASS
 --------------------------------
 Total                38/38 PASS
 ```
+
+The Phase 2.1 memory layer now records provenance (`source`, timestamps, confidence, type) plus lifecycle state (`active`, `stale`, `contradicted`) and exposes that evidence during retrieval. Phase 2.2 builds on this foundation with deterministic conflict detection and explicit stale-memory transitions.
 
 ## Vision
 
@@ -75,10 +77,13 @@ CYRAX is intended to become a dependable local AI agent that can:
              └──────────────────────┼──────────────────────┘
                                     │
                                     ▼
-                              Qwen3:8b
+                         ┌──────────────────────┐
+                         │   Evidence / Truth   │
+                         │       Policy         │
+                         └──────────┬───────────┘
                                     │
                                     ▼
-                           Truth / Source Policy
+                              Qwen3:8b
                                     │
                                     ▼
                               Final Answer
@@ -128,7 +133,15 @@ Obsidian stores readable Markdown notes for durable project knowledge. Memory is
 
 ### Truth Policy
 
-`agent/truth_policy.py` provides a small deterministic evidence-ranking layer. It is now wired into the CYRAX runtime rather than existing only as documentation or tests.
+`agent/truth_policy.py` provides a deterministic evidence-ranking layer. It is wired into the CYRAX runtime and is the authority used by the Phase 2 conflict resolver.
+
+### Evidence-Aware Memory
+
+`agent/memory/evidence.py` stores provenance and lifecycle metadata directly in Markdown frontmatter. `agent/memory/manager.py` exposes that metadata during retrieval and can transition a memory to `stale` or `contradicted` without destroying its human-readable content.
+
+### Conflict Detection
+
+`agent/memory/conflict.py` compares evidence for the same fact and delegates authority selection to `TruthPolicy`. The LLM is not asked to decide which conflicting source is more trustworthy. A later runtime integration will use this engine to automatically mark lower-authority memories stale when live evidence supersedes them.
 
 ### Memory Policy
 
@@ -144,13 +157,17 @@ CYRAX/
 │   ├── tool_bridge.py
 │   ├── truth_policy.py
 │   └── memory/
+│       ├── conflict.py
+│       ├── evidence.py
+│       ├── manager.py
 │       └── memory_policy.py
 ├── scripts/
 │   ├── verify_request_routing.py
 │   ├── verify_integration.py
 │   ├── verify_truth_policy.py
 │   ├── verify_truth_runtime.py
-│   └── verify_unicode_source.py
+│   ├── verify_unicode_source.py
+│   └── verify_conflict_detection.py
 ├── config/
 ├── tests/
 ├── docs/
@@ -168,11 +185,12 @@ Run the following from the CYRAX virtual environment:
 .\.venv\Scripts\python.exe .\scripts\verify_unicode_source.py
 .\.venv\Scripts\python.exe .\scripts\verify_truth_runtime.py
 .\.venv\Scripts\python.exe .\scripts\verify_truth_policy.py
+.\.venv\Scripts\python.exe .\scripts\verify_conflict_detection.py
 .\.venv\Scripts\python.exe .\scripts\verify_integration.py
 .\.venv\Scripts\python.exe .\scripts\verify_request_routing.py
 ```
 
-The repository's current local baseline is **38/38 tests passing**.
+The `main` branch baseline is **38/38 tests passing**; Phase 2.2 adds focused conflict-detection checks that must also pass before merge.
 
 ## Design Principles
 
@@ -183,6 +201,7 @@ The repository's current local baseline is **38/38 tests passing**.
 5. **Durable memory should be selective, not a transcript dump.**
 6. **Everything important should be testable without depending on model intuition.**
 7. **Local-first is a design constraint, not a marketing phrase.**
+8. **Conflicting evidence must be resolved deterministically before the LLM explains it.**
 
 ## Roadmap
 
@@ -200,17 +219,17 @@ The repository's current local baseline is **38/38 tests passing**.
 - [x] Unit normalization and evidence integrity guards
 - [x] UTF-8 source regression protection
 
-### Phase 2 — Truth-Aware Second Brain **← NEXT**
+### Phase 2 — Truth-Aware Second Brain
 
-1. **Structured provenance** — every durable memory records source, timestamp, confidence, type, and verification state.
-2. **Evidence-backed retrieval** — retrieval returns useful provenance instead of bare text.
-3. **Conflict detection** — compare live/project/user evidence with memory when facts overlap.
-4. **Stale-state handling** — mark superseded memories as stale/contradicted instead of silently treating them as current.
+1. **Structured provenance** — every durable memory records source, timestamp, confidence, type, and verification state. **[x]**
+2. **Evidence-backed retrieval** — retrieval returns useful provenance instead of bare text. **[x]**
+3. **Conflict detection** — compare live/project/user evidence with memory when facts overlap. **[in progress]**
+4. **Stale-state handling** — mark superseded memories as stale/contradicted instead of silently treating them as current. **[in progress]**
 5. **Memory promotion** — consolidate repeated validated observations into durable project knowledge.
 6. **Memory maintenance** — detect duplicates, stale notes, and contradictory project facts.
 7. **Regression suite** — preserve the 38/38 baseline while adding memory provenance and temporal-conflict tests.
 
-**Immediate implementation target:** make the memory layer evidence-aware without changing its human-readable Markdown nature.
+**Current implementation target:** finish deterministic conflict detection, then wire it into normal runtime answer construction so live evidence can automatically supersede stale memory.
 
 ### Phase 3 — Agent Planning
 
