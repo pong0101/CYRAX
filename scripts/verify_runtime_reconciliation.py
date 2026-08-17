@@ -3,12 +3,21 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "agent"))
 
-from interpreter import interpreter  # noqa: E402
+# The reconciliation contract only needs interpreter.llm.model. Keep this
+# verification deterministic and independent from the full Open Interpreter
+# dependency graph used by the Windows runtime.
+fake_interpreter = types.ModuleType("interpreter")
+fake_interpreter.interpreter = types.SimpleNamespace(
+    llm=types.SimpleNamespace(model=""),
+)
+sys.modules["interpreter"] = fake_interpreter
+
 from memory import MemoryManager  # noqa: E402
 
 passed = failed = 0
@@ -31,7 +40,7 @@ with tempfile.TemporaryDirectory() as temp:
         memory_type="project",
     )
 
-    interpreter.llm.model = "ollama_chat/qwen3:14b"
+    fake_interpreter.interpreter.llm.model = "ollama_chat/qwen3:14b"
     reconciled = manager.reconcile_runtime_model()
     evidence = manager._parse_frontmatter(old_path.read_text(encoding="utf-8"))
 
