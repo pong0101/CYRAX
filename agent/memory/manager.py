@@ -11,6 +11,8 @@ from typing import Any
 
 import ollama
 
+from memory.evidence import MemoryEvidence
+
 
 class MemoryManager:
     def __init__(self, vault_path: str, embedding_model: str | None = None):
@@ -52,6 +54,40 @@ class MemoryManager:
     @staticmethod
     def _hash(content: str) -> str:
         return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _parse_frontmatter(content: str) -> MemoryEvidence:
+        """Parse simple Markdown frontmatter without adding a YAML dependency."""
+        if not content.startswith("---"):
+            return MemoryEvidence()
+        lines = content.splitlines()
+        values: dict[str, str] = {}
+        for line in lines[1:]:
+            if line.strip() == "---":
+                break
+            key, separator, value = line.partition(":")
+            if separator:
+                values[key.strip().lower()] = value.strip()
+        return MemoryEvidence(
+            source=values.get("source", "CYRAX"),
+            created=values.get("created", ""),
+            updated=values.get("updated", ""),
+            last_verified=values.get("last_verified", ""),
+            memory_type=values.get("type", "memory"),
+            confidence=values.get("confidence", "HIGH"),
+            status=values.get("status", "active"),
+            superseded_by=values.get("superseded_by", ""),
+        ).normalized()
+
+    @classmethod
+    def _result(cls, path: str, score: float | int, content: str) -> dict[str, Any]:
+        evidence = cls._parse_frontmatter(content)
+        return {
+            "path": path,
+            "score": score,
+            "content": content,
+            "evidence": evidence.__dict__,
+        }
 
     def _embed(self, text: str) -> list[float]:
         response = ollama.embed(model=self.embedding_model, input=text)
@@ -142,7 +178,7 @@ class MemoryManager:
                     continue
                 content = path.read_text(encoding="utf-8")
                 score = self._cosine(qv, item.get("embedding", []))
-                scored.append({"path": rel, "score": round(score, 4), "content": content})
+                scored.append(self._result(rel, round(score, 4), content))
             scored.sort(key=lambda x: x["score"], reverse=True)
             return scored[:limit], "semantic"
         except Exception:
@@ -155,7 +191,7 @@ class MemoryManager:
             lower = content.lower()
             score = sum(lower.count(term) for term in terms)
             if score:
-                scored.append({"path": rel, "score": score, "content": content})
+                scored.append(self._result(rel, score, content))
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored[:limit]
 
@@ -174,17 +210,15 @@ class MemoryManager:
         match = re.search(r"^created:\s*(.+)$", existing, flags=re.MULTILINE)
         if match:
             created = match.group(1).strip()
-        frontmatter = (
-            "---\n"
-            f"created: {created}\n"
-            f"updated: {now}\n"
-            f"last_verified: {now}\n"
-            f"type: {memory_type}\n"
-            f"confidence: {confidence}\n"
-            "source: CYRAX\n"
-            "---\n\n"
+        evidence = MemoryEvidence(
+            created=created,
+            updated=now,
+            last_verified=now,
+            memory_type=memory_type,
+            confidence=confidence,
+            status="active",
         )
-        path.write_text(frontmatter + f"# {title}\n\n{content.strip()}\n", encoding="utf-8")
+        path.write_text(evidence.to_frontmatter() + f"# {title}\n\n{content.strip()}\n", encoding="utf-8")
         self._ensure_index()
         return path
 
