@@ -222,6 +222,42 @@ class MemoryManager:
         self._ensure_index()
         return path
 
+    def mark_status(self, path: str, status: str, superseded_by: str = "") -> Path:
+        """Mark durable memory stale/contradicted without changing its body."""
+        if status not in {"active", "stale", "contradicted"}:
+            raise ValueError(f"invalid memory status: {status}")
+        target = Path(path)
+        if not target.is_absolute():
+            target = self.vault / target
+        target = target.resolve()
+        target.relative_to(self.vault)
+        content = target.read_text(encoding="utf-8")
+        if not content.startswith("---"):
+            raise ValueError("memory file has no frontmatter")
+        lines = content.splitlines()
+        end = next((i for i, line in enumerate(lines[1:], start=1) if line.strip() == "---"), None)
+        if end is None:
+            raise ValueError("memory frontmatter is not closed")
+        now = self._now()
+        replacements = {
+            "updated": now,
+            "status": status,
+            "superseded_by": superseded_by,
+        }
+        seen: set[str] = set()
+        for index in range(1, end):
+            key = lines[index].split(":", 1)[0].strip().lower()
+            if key in replacements:
+                lines[index] = f"{key}: {replacements[key]}"
+                seen.add(key)
+        for key, value in replacements.items():
+            if key not in seen:
+                lines.insert(end, f"{key}: {value}")
+                end += 1
+        target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self._ensure_index()
+        return target
+
     def log(self, text: str) -> Path:
         day = datetime.now().astimezone().strftime("%Y-%m-%d")
         folder = self.vault / "04_Logs"
