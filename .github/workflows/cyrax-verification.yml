@@ -1,0 +1,41 @@
+name: CYRAX Verification
+
+on:
+  push:
+    branches: [main, "phase-*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install runtime dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+
+      - name: Compile Python sources
+        run: python -m compileall -q agent scripts
+
+      - name: Verify Unicode source
+        run: python scripts/verify_unicode_source.py
+
+      - name: Verify truth policy
+        run: python scripts/verify_truth_policy.py
+
+      - name: Verify conflict detection
+        run: python scripts/verify_conflict_detection.py
+
+      - name: Verify runtime reconciliation
+        run: python scripts/verify_runtime_reconciliation.py
+
+      - name: Verify request routing
+        run: python scripts/verify_request_routing.py
