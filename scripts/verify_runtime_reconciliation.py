@@ -68,7 +68,7 @@ with tempfile.TemporaryDirectory() as temp:
     matching_manager = MemoryManager(tempfile.mkdtemp(prefix="cyrax-matching-"))
     try:
         same_path = matching_manager.remember(
-            "current-model",
+            "main-model",
             "CYRAX main model is qwen3:14b.",
             memory_type="project",
         )
