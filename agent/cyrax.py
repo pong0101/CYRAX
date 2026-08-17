@@ -81,6 +81,16 @@ class CYRAX:
             return f"CYRAX ใช้โมเดลหลัก **{self.model}** ผ่าน Ollama\n\n[Source: Runtime]"
         return None
 
+    @staticmethod
+    def _is_authoritative_read_tool(name: str) -> bool:
+        """Return tools whose successful output is exact live evidence.
+
+        These results are passed through unchanged after the tool succeeds so
+        the LLM cannot accidentally mutate filenames, model names, or other
+        exact machine facts while paraphrasing them.
+        """
+        return name in {"read_file", "list_directory", "ollama_models"}
+
     def system_prompt(self, user_message: str) -> str:
         context = self.memory_context(user_message)
         live_hint = (
@@ -108,10 +118,12 @@ class CYRAX:
             f"6. Deterministic policy enforced by runtime: {truth_context}\n\n"
             "TOOL RESULT INTEGRITY:\n"
             "1. A successful native tool result is authoritative evidence.\n"
-            "2. Never claim a file is empty, missing, or unread when read_file returned actual content.\n"
-            "3. Never contradict exact content returned by read_file.\n"
-            "4. Never replace a successful tool result with a guess from memory.\n"
-            "5. For read-only file requests, report the returned file content faithfully.\n\n"
+            "2. A successful authoritative read tool result is immutable evidence: do not rename, truncate, reorder, reinterpret, or invent its exact values.\n"
+            "3. Never claim a file is empty, missing, or unread when read_file returned actual content.\n"
+            "4. Never contradict exact content returned by read_file.\n"
+            "5. Never alter exact filenames, paths, model names, byte counts, or tool-returned values.\n"
+            "6. For authoritative directory/model listings, preserve every returned entry exactly.\n"
+            "7. For read-only file requests, report the returned file content faithfully.\n\n"
             "UNIT ACCURACY:\n"
             "1. Tool output that says bytes means BYTES. Never call bytes bits.\n"
             "2. If a tool returns N bytes, report N bytes and, when useful, convert to GiB as N / 1073741824.\n"
@@ -229,11 +241,9 @@ class CYRAX:
                 print(result)
                 self.last_source = "live_tool" if name in {"ollama_models", "read_file", "list_directory"} else "action"
                 messages.append({"role": "tool", "content": result})
-                # Native read_file is already the authoritative answer. Do not
-                # ask the LLM to reinterpret it and accidentally claim the file
-                # is empty or missing. This also keeps read-only requests out of
-                # the model's hallucination path.
-                if name == "read_file" and not result.startswith("Error:"):
+                # Exact live evidence must not be paraphrased by the LLM. This
+                # prevents corruption such as E2E_TEST.txt becoming E2.
+                if self._is_authoritative_read_tool(name) and not result.startswith("Error:"):
                     answer = result
                     self.history.extend([{"role": "user", "content": user_message}, {"role": "assistant", "content": answer}])
                     self.memory.log(f"User: {user_message}\nCYRAX: {answer}")
