@@ -43,7 +43,7 @@ def reconcile_main_model(
     """Mark active memories stale when runtime model evidence supersedes them."""
     policy = resolver or MemoryConflictResolver(TruthPolicy())
     reconciled: list[Reconciliation] = []
-    for item in memory.search("main model", limit=max(1, min(limit, 25))):
+    for item in memory.search("main model โมเดลหลัก", limit=max(1, min(limit, 25))):
         evidence = item.get("evidence", {})
         if evidence.get("status", "active") != "active":
             continue
