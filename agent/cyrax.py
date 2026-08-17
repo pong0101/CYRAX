@@ -10,10 +10,18 @@ from typing import Any
 import ollama
 from interpreter import interpreter
 
-from memory import MemoryManager
-from memory.memory_policy import MemoryPolicy
-from tool_bridge import ToolBridge
-from truth_policy import TruthPolicy
+try:
+    # Package mode: from agent.cyrax import CYRAX
+    from .memory import MemoryManager
+    from .memory.memory_policy import MemoryPolicy
+    from .tool_bridge import ToolBridge
+    from .truth_policy import TruthPolicy
+except ImportError:
+    # Script mode: python agent\cyrax.py
+    from memory import MemoryManager
+    from memory.memory_policy import MemoryPolicy
+    from tool_bridge import ToolBridge
+    from truth_policy import TruthPolicy
 
 
 class CYRAX:
