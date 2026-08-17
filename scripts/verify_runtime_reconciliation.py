@@ -62,15 +62,24 @@ with tempfile.TemporaryDirectory() as temp:
     check("Thai main-model claim is detected", len(thai_reconciled) == 1)
     check("Thai conflicting memory becomes stale", thai_evidence.status == "stale")
 
-    same_path = manager.remember(
-        "current-model",
-        "CYRAX main model is qwen3:14b.",
-        memory_type="project",
-    )
-    reconciled_again = manager.reconcile_runtime_model()
-    same_evidence = manager._parse_frontmatter(same_path.read_text(encoding="utf-8"))
-    check("Matching runtime evidence is not marked stale", same_evidence.status == "active")
-    check("Matching runtime evidence produces no new conflict", len(reconciled_again) == 0)
+    # Use a fresh manager for the matching-value contract so the assertion
+    # cannot be affected by unrelated stale/conflicting memories from the
+    # preceding English/Thai reconciliation cases.
+    matching_manager = MemoryManager(tempfile.mkdtemp(prefix="cyrax-matching-"))
+    try:
+        same_path = matching_manager.remember(
+            "current-model",
+            "CYRAX main model is qwen3:14b.",
+            memory_type="project",
+        )
+        reconciled_again = matching_manager.reconcile_runtime_model()
+        same_evidence = matching_manager._parse_frontmatter(same_path.read_text(encoding="utf-8"))
+        check("Matching runtime evidence is not marked stale", same_evidence.status == "active")
+        check("Matching runtime evidence produces no new conflict", len(reconciled_again) == 0)
+    finally:
+        import shutil
+
+        shutil.rmtree(matching_manager.vault, ignore_errors=True)
 
     casual_path = manager.remember(
         "model-note",
